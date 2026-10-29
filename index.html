@@ -31,6 +31,14 @@ button:disabled{opacity:.45}
 .log{background:#1e2330;border-radius:10px;padding:10px;margin-top:14px}
 .log input{width:90px;min-height:44px;font-size:18px;padding:6px;border-radius:8px;border:1px solid #444;background:#0e1118;color:#fff}
 .log pre{white-space:pre-wrap;word-break:break-all;font-size:12px;max-height:200px;overflow:auto;background:#0e1118;padding:6px;border-radius:6px}
+.pace{position:relative;height:260px;display:flex;align-items:center;justify-content:center;margin:8px 0}
+#ex-circle{position:absolute;width:240px;height:240px;border-radius:50%;background:#1d4f91;border:4px solid #3b82f6;transform:scale(.4);will-change:transform}
+#ex-circle.hold{background:#6b5a1d;border-color:#fbbf24}
+#ex-circle.out{background:#1d6b4a;border-color:#4ade80}
+.pace-txt{position:relative;text-align:center}
+.pace-txt span{display:block}
+#ex-phase{font-size:32px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+#ex-count{font-size:44px;font-weight:800}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -43,7 +51,7 @@ button:disabled{opacity:.45}
   <p class="small">Test tool, not the game. Tests the 3 real-life checks from GDD section 4. Nothing is recorded or uploaded; the trial log stays in this browser.</p>
   <button class="big" data-open="still">1. Still Pond (motion)</button>
   <button class="big" data-open="squat">2. Squat Duel (camera)</button>
-  <button class="big" data-open="exhale">3. Long Exhale (mic)</button>
+  <button class="big" data-open="exhale">3. 4-4-8 Breathing (mic)</button>
   <div class="log">
     <b>Trial log (all tests)</b>
     <pre id="log-menu"></pre>
@@ -94,25 +102,26 @@ button:disabled{opacity:.45}
 
 <section id="s-exhale" hidden>
   <button class="alt" data-back>&larr; Menu</button>
-  <h2>Long Exhale</h2>
-  <p class="small">1) Calibrate: stay quiet for 3 s. 2) Start, then breathe out slowly near the mic, 4-10 s each, 2 s apart. Audio is only measured, never stored.</p>
+  <h2>4-4-8 Breathing (mic)</h2>
+  <p class="small">1) Calibrate: stay quiet for 3 s. 2) Start, then follow the circle for 5 rounds: breathe IN 4 s through the nose, HOLD 4 s, BLOW OUT 8 s near the mic. Audio is only measured, never stored.</p>
   <p class="small warn" id="ex-notice">Take out your headphones or AirPods. This uses your phone's own microphone.</p>
   <div class="banner" id="ex-hp" hidden><span id="ex-hp-text"></span><br><button id="ex-hp-ok">I've removed them</button></div>
   <button class="big" id="ex-cal">1. Calibrate (3 s quiet)</button>
-  <button class="big" id="ex-start" disabled>2. Start listening</button>
+  <button class="big" id="ex-start" disabled>2. Start 5 rounds</button>
   <button class="alt" id="ex-stop">Stop</button>
-  <button class="alt" id="ex-reset">Reset set</button>
+  <button class="alt" id="ex-reset">Reset rounds</button>
   <button class="big" id="ex-retry" hidden>Retry calibration</button>
+  <div class="pace"><div id="ex-circle"></div><div class="pace-txt"><span id="ex-phase">ready</span><span id="ex-count"></span></div></div>
   <div class="meter" id="ex-meter"><i id="ex-bar"></i><u id="ex-thr"></u><s id="ex-floor"></s></div>
   <div class="grid">
-    <div class="cell"><b>Exhales</b><span id="ex-n">0 / 5</span></div>
+    <div class="cell"><b>Rounds verified</b><span id="ex-n">0 / 5</span></div>
     <div class="cell"><b>Now</b><span class="sm" id="ex-now">idle</span></div>
     <div class="cell"><b>Level / floor</b><span class="sm" id="ex-db">-</span></div>
     <div class="cell"><b>Flatness</b><span class="sm" id="ex-flat">-</span></div>
     <div class="cell"><b>Mic</b><span class="sm" id="ex-mic">not started</span></div>
     <div class="cell"><b>Calibration</b><span class="sm" id="ex-calst">not done</span></div>
   </div>
-  <b>Detected events</b>
+  <b>Rounds</b>
   <pre class="small" id="ex-list">none</pre>
   <div class="small" id="ex-msg"></div>
   <div class="log" data-log="exhale"></div>
@@ -125,7 +134,9 @@ var TP = (function () {
   var CONFIG = {
     still: { faceDownUpz: -0.94, accelStd: 0.15, rotMax: 12, window: 1.0, minSamples: 5, staleSec: 1.0, resumeDebounce: 0.5, gapSec: 0.5 },
     squat: { downR: 0.40, upR: 0.75, minCycleSec: 0.7, minDownSec: 0.15, armSec: 0.5, visMin: 0.5, edge: 0.02, ema: 0.5 },
-    exhale: { enterDb: 8, stayDb: 5, flatMin: 0.10, flatEma: 0.3, bridgeSec: 0.4, minLen: 4, maxLen: 10, minQuiet: 2, maxDbStd: 6, minFloorDb: -80, minEventLen: 0.5, gapSec: 0.5, target: 5, calSec: 3, fftLoHz: 200, fftHiHz: 6000, lowFloorDb: -85, checkSec: 3, minRiseDb: 6, hpWords: ['airpods', 'headphone', 'headset', 'bluetooth', 'buds', 'earphone'] }
+    exhale: { enterDb: 8, stayDb: 5, flatMin: 0.10, flatEma: 0.3, bridgeSec: 0.4, minLen: 4, maxLen: 10, minQuiet: 2, maxDbStd: 6, minFloorDb: -80, minEventLen: 0.5, gapSec: 0.5, target: 5, calSec: 3, fftLoHz: 200, fftHiHz: 6000, lowFloorDb: -85, checkSec: 3, minRiseDb: 6, hpWords: ['airpods', 'headphone', 'headset', 'bluetooth', 'buds', 'earphone'] },
+    /* guided 4-4-8 breathing. IN is never used as proof (nose breath is near-silent). */
+    breath: { inSec: 4, holdSec: 4, outSec: 8, rounds: 5, holdPctl: 0.8, holdRiseDb: 5, outRiseDb: 8, outFlatMin: 0.10, outFrac: 0.6, outSkipSec: 0.5, minFrames: 10, gapSec: 0.5, vibrateMs: 60, minScale: 0.4 }
   };
 
   /* ---------- Still Pond ---------- */
@@ -328,7 +339,73 @@ var TP = (function () {
     return this;
   };
 
-  return { CONFIG: CONFIG, StillTracker: StillTracker, SquatCounter: SquatCounter, ExhaleDetector: ExhaleDetector, spectralFlatness: spectralFlatness, inFrame: inFrame, depthRatio: depthRatio, percentile: percentile, findHeadphoneLabel: findHeadphoneLabel, calibrationVerdict: calibrationVerdict };
+  /* ---------- 4-4-8 breathing ---------- */
+  /* holdDb: mic levels (dB) seen during HOLD. outFrames: [{t: seconds since OUT began, db, flat}]. Pure.
+     HOLD passes if the holdPctl-th percentile of the level is below floor + holdRiseDb.
+     OUT passes if >= outFrac of the frames after outSkipSec have level >= floor + outRiseDb and flatness >= outFlatMin.
+     Too few frames in a phase = nothing was heard = not passed. */
+  function judgeRound(holdDb, outFrames, floor, cfg) {
+    var c = cfg || CONFIG.breath, i, n;
+    var r = { hold: 0, out: 0, holdOk: false, outOk: false, ok: false, holdFrames: (holdDb || []).length, outFrames: 0 };
+    if (holdDb && holdDb.length >= c.minFrames) {
+      var thr = floor + c.holdRiseDb; n = 0;
+      for (i = 0; i < holdDb.length; i++) if (holdDb[i] < thr) n++;
+      r.hold = 100 * n / holdDb.length; r.holdOk = percentile(holdDb, c.holdPctl) < thr;
+    }
+    var use = (outFrames || []).filter(function (f) { return f.t >= c.outSkipSec; });
+    r.outFrames = use.length;
+    if (use.length >= c.minFrames) {
+      n = 0;
+      for (i = 0; i < use.length; i++) if (use[i].db >= floor + c.outRiseDb && use[i].flat >= c.outFlatMin) n++;
+      r.out = 100 * n / use.length; r.outOk = n / use.length >= c.outFrac;
+    }
+    r.ok = r.holdOk && r.outOk; return r;
+  }
+  /* Runs the guided rounds against a clock. The app sets the pace; frames are filed by phase.
+     A round with a gap in its frames or an interrupt (page hidden, audio paused) is voided and never counts. */
+  function BreathSession(floorDb, cfg) {
+    this.c = cfg || CONFIG.breath; this.floor = floorDb; this.t0 = null; this.cur = 0; this.results = []; this.done = false;
+    this.voided = {}; this.hold = []; this.out = []; this.lastT = null; this.period = this.c.inSec + this.c.holdSec + this.c.outSec;
+  }
+  BreathSession.prototype.start = function (t) { this.t0 = t; this.lastT = t; };
+  BreathSession.prototype._roundOf = function (t) { return Math.floor((t - this.t0) / this.period); };
+  BreathSession.prototype._voidSpan = function (a, b) {
+    for (var r = Math.max(0, this._roundOf(a)); r <= Math.min(this.c.rounds - 1, this._roundOf(b)); r++) this.voided[r] = true;
+  };
+  BreathSession.prototype._finalize = function () {
+    var res = judgeRound(this.hold, this.out, this.floor, this.c), v = !!this.voided[this.cur];
+    res.round = this.cur + 1; res.voided = v; if (v) res.ok = false;
+    this.results.push(res); this.cur++; this.hold = []; this.out = [];
+    if (this.cur >= this.c.rounds) this.done = true;
+  };
+  BreathSession.prototype._sync = function (t) {
+    if (this.t0 === null || this.done) return;
+    if (t - this.lastT > this.c.gapSec) this._voidSpan(this.lastT, t); /* nothing observed in between */
+    while (!this.done && t - this.t0 >= (this.cur + 1) * this.period) this._finalize();
+  };
+  BreathSession.prototype.interrupt = function (t) { if (this.t0 !== null && !this.done) this._voidSpan(t, t); };
+  BreathSession.prototype.feed = function (t, db, flat) {
+    if (this.t0 === null || this.done) return;
+    this._sync(t); this.lastT = t;
+    if (this.done) return;
+    var el = t - this.t0 - this.cur * this.period, c = this.c;
+    if (el < 0) return;
+    if (el >= c.inSec + c.holdSec) this.out.push({ t: el - c.inSec - c.holdSec, db: db, flat: flat });
+    else if (el >= c.inSec) this.hold.push(db);
+  };
+  /* Where the pacing is at time t. scale drives the circle: grows in IN, stays in HOLD, shrinks in OUT. */
+  BreathSession.prototype.status = function (t) {
+    this._sync(t); var c = this.c;
+    var verified = this.results.filter(function (r) { return r.ok; }).length;
+    if (this.done) return { done: true, phase: 'done', round: c.rounds, left: 0, scale: c.minScale, verified: verified, total: c.rounds };
+    var el = Math.max(0, t - this.t0 - this.cur * this.period), ph, left, sc;
+    if (el < c.inSec) { ph = 'in'; left = c.inSec - el; sc = c.minScale + (1 - c.minScale) * el / c.inSec; }
+    else if (el < c.inSec + c.holdSec) { ph = 'hold'; left = c.inSec + c.holdSec - el; sc = 1; }
+    else { ph = 'out'; left = this.period - el; sc = 1 - (1 - c.minScale) * (el - c.inSec - c.holdSec) / c.outSec; }
+    return { done: false, phase: ph, round: this.cur + 1, left: left, scale: sc, verified: verified, total: c.rounds };
+  };
+
+  return { CONFIG: CONFIG, judgeRound: judgeRound, BreathSession: BreathSession, StillTracker: StillTracker, SquatCounter: SquatCounter, ExhaleDetector: ExhaleDetector, spectralFlatness: spectralFlatness, inFrame: inFrame, depthRatio: depthRatio, percentile: percentile, findHeadphoneLabel: findHeadphoneLabel, calibrationVerdict: calibrationVerdict };
 })();
 if (typeof module !== 'undefined') module.exports = TP;
 </script>
@@ -376,6 +453,7 @@ if (typeof module !== 'undefined') module.exports = TP;
     var d = detectors[test] ? detectors[test]() : { detected: '?', extra: '' };
     var a = readLog();
     a.push({ time: new Date().toISOString(), test: test, expected: exp, detected: d.detected, extra: d.extra, note: note, ua: navigator.userAgent, headphonesDetected: !!exHp, deviceLabel: exLabel });
+    if (d.fields) Object.keys(d.fields).forEach(function (k) { a[a.length - 1][k] = d.fields[k]; });
     writeLog(a); renderLogs();
   }
   function copyLog() {
@@ -564,11 +642,12 @@ if (typeof module !== 'undefined') module.exports = TP;
   };
 
   /* ---------- Long Exhale ---------- */
-  var ac = null, an = null, exStream = null, exTimer = null, exDet = new TP.ExhaleDetector(), tbuf, fbuf, exMode = 'idle', exCalStart = 0, exNow = 0, exT0 = 0, exGen = 0, exOpening = false, exPaused = false, exLastTickT = null, exHp = false, exLabel = '', exHpTapped = false;
+  var ac = null, an = null, exStream = null, exTimer = null, exDet = new TP.ExhaleDetector(), tbuf, fbuf, exMode = 'idle', exCalStart = 0, exNow = 0, exT0 = 0, exGen = 0, exOpening = false, exPaused = false, exLastTickT = null, exHp = false, exLabel = '', exHpTapped = false, exSess = null, exPh = null;
   function exNowT() { return (performance.now() - exT0) / 1000; }
   function exInterrupt() {
     if (!ac) return;
     var t = exNowT(); exDet.interrupt(t); exLastTickT = t;
+    if (exSess && exMode === 'run') exSess.interrupt(t); /* page hidden / audio paused: the round in progress is voided */
     if (exMode === 'cal') { exDet.calibrateStart(); exCalStart = t; } /* a calibration with a hole in it is not valid */
     if (exMode === 'check') { exDet.checkStart(); exCalStart = t; }
   }
@@ -577,7 +656,7 @@ if (typeof module !== 'undefined') module.exports = TP;
     if (exTimer) { clearInterval(exTimer); exTimer = null; }
     if (exStream) { exStream.getTracks().forEach(function (t) { t.stop(); }); exStream = null; }
     if (ac) { try { ac.close(); } catch (e) {} ac = null; }
-    exMode = 'idle'; wlRelease(); if ($('ex-mic')) setText('ex-mic', 'stopped');
+    exMode = 'idle'; exSess = null; exPh = null; wlRelease(); if ($('ex-mic')) { setText('ex-mic', 'stopped'); exPaceReset(); }
   }
   /* Best effort: resolves {found: matching label or null, label: active track label}. Never rejects; empty labels = nothing found. */
   function exHeadphoneCheck(stream) {
@@ -638,6 +717,7 @@ if (typeof module !== 'undefined') module.exports = TP;
       setText('ex-mic', 'not available', 'bad'); setText('ex-msg', 'Microphone: ' + (e && e.name) + (e && e.message ? ' - ' + e.message : '')); if (ac) { try { ac.close(); } catch (x) {} ac = null; }
     });
   }
+  var EX_RUN_MSG = 'Listening. Follow the circle: breathe in through your nose, hold, then blow out slowly near the mic.';
   var HEAR_MSG = "We can't hear your breath. Remove headphones and hold the phone 20-30 cm from your mouth.";
   function exTick() {
     if (!an) return;
@@ -653,7 +733,7 @@ if (typeof module !== 'undefined') module.exports = TP;
       setText('ex-mic', 'paused', 'warn'); if (exMode !== 'idle') setText('ex-msg', 'Mic paused, tap to resume');
       return;
     }
-    if (exPaused) { exPaused = false; setText('ex-mic', 'on', 'ok'); if (exMode === 'run') setText('ex-msg', 'Listening. Breathe out slowly near the mic.'); }
+    if (exPaused) { exPaused = false; setText('ex-mic', 'on', 'ok'); if (exMode === 'run') setText('ex-msg', EX_RUN_MSG); }
     if (exMode === 'cal') {
       exDet.calibrateFeed(db); var left = 3 - (t - exCalStart);
       setText('ex-calst', 'quiet... ' + Math.max(0, left).toFixed(1) + ' s', 'warn');
@@ -671,19 +751,44 @@ if (typeof module !== 'undefined') module.exports = TP;
         if (v.ok) { exMode = 'idle'; setText('ex-calst', 'floor ' + exDet.floorDb.toFixed(1) + ' dB, breath +' + v.rise.toFixed(0) + ' dB', 'ok'); $('ex-start').disabled = false; $('ex-retry').hidden = true; setText('ex-msg', 'Calibrated. Tap "Start listening".'); }
         else exCalFail(HEAR_MSG);
       }
-    } else if (exMode === 'run') { exDet.feed(t, db, flat); }
-    else { exDet.flatS += 0.3 * (flat - exDet.flatS); }
-    exRender(db, flat);
+    }
+    exDet.flatS += TP.CONFIG.exhale.flatEma * (flat - exDet.flatS); /* smoothed flatness feeds the OUT proof */
+    if (exMode === 'run' && exSess) exSess.feed(t, db, exDet.flatS);
+    exRender(db, flat, t);
   }
-  function exRender(db, flat) {
-    var lo = -90, hi = 0, pct = function (d) { return Math.max(0, Math.min(100, (d - lo) / (hi - lo) * 100)) + '%'; };
+  function exBuzz() { try { if (navigator.vibrate) navigator.vibrate(TP.CONFIG.breath.vibrateMs); } catch (e) {} }
+  function exPaceReset() { var c = $('ex-circle'); if (!c) return; c.style.transform = 'scale(' + TP.CONFIG.breath.minScale + ')'; c.className = ''; setText('ex-phase', 'ready'); setText('ex-count', ''); }
+  var PH_WORD = { 'in': 'IN', hold: 'HOLD', out: 'BLOW OUT' };
+  function exRoundsText() {
+    var c = TP.CONFIG.breath, lines = [];
+    for (var i = 0; i < c.rounds; i++) {
+      var r = exSess && exSess.results[i];
+      if (r) lines.push((i + 1) + '. ' + (r.voided ? '– voided (page left or mic paused)' : r.ok ? '✓ verified' : '– not heard') + '   hold ' + r.hold.toFixed(0) + '%, out ' + r.out.toFixed(0) + '%');
+      else lines.push((i + 1) + '. ' + (exSess && !exSess.done && i === exSess.cur ? '… in progress' : '·'));
+    }
+    return lines.join('\n');
+  }
+  function exRender(db, flat, t) {
+    var lo = -90, hi = 0, pct = function (d) { return Math.max(0, Math.min(100, (d - lo) / (hi - lo) * 100)) + '%'; }, c = TP.CONFIG.breath;
     $('ex-bar').style.width = pct(db);
-    if (exDet.floorDb !== null) { $('ex-floor').style.left = pct(exDet.floorDb); $('ex-thr').style.left = pct(exDet.floorDb + TP.CONFIG.exhale.enterDb); }
+    if (exDet.floorDb !== null) { $('ex-floor').style.left = pct(exDet.floorDb); $('ex-thr').style.left = pct(exDet.floorDb + c.outRiseDb); }
     setText('ex-db', db.toFixed(0) + ' dB / ' + (exDet.floorDb === null ? '?' : exDet.floorDb.toFixed(0)));
-    setText('ex-flat', exDet.flatS.toFixed(2) + (exDet.flatS >= TP.CONFIG.exhale.flatMin ? ' (noise-like)' : ' (tonal)'), exDet.flatS >= TP.CONFIG.exhale.flatMin ? 'ok' : 'warn');
-    setText('ex-n', exDet.accepted + ' / ' + TP.CONFIG.exhale.target, exDet.accepted >= TP.CONFIG.exhale.target ? 'ok' : '');
-    setText('ex-now', exMode === 'run' ? (exDet.inEv ? 'exhaling ' + exDet.curLen.toFixed(1) + ' s' : 'quiet') : exMode);
-    $('ex-list').textContent = exDet.events.length ? exDet.events.map(function (e, i) { return (i + 1) + '. ' + e.len.toFixed(1) + ' s  ' + (e.ok ? 'COUNTED' : 'rejected: ' + e.why); }).join('\n') : 'none';
+    setText('ex-flat', exDet.flatS.toFixed(2) + (exDet.flatS >= c.outFlatMin ? ' (noise-like)' : ' (tonal)'), exDet.flatS >= c.outFlatMin ? 'ok' : 'warn');
+    var st = exMode === 'run' && exSess ? exSess.status(t) : null;
+    if (st && st.done) { /* last round filed */
+      exMode = 'idle';
+      setText('ex-msg', st.verified + ' / ' + st.total + ' rounds verified', st.verified ? 'ok' : '');
+    }
+    var shown = exSess ? exSess.results.filter(function (r) { return r.ok; }).length : 0;
+    setText('ex-n', shown + ' / ' + c.rounds, exSess && exSess.done && shown >= c.rounds ? 'ok' : '');
+    setText('ex-now', st && !st.done ? 'round ' + st.round + ' ' + st.phase : exMode);
+    var circ = $('ex-circle');
+    if (st && !st.done) {
+      circ.style.transform = 'scale(' + st.scale.toFixed(3) + ')'; circ.className = st.phase === 'in' ? '' : st.phase;
+      setText('ex-phase', PH_WORD[st.phase]); setText('ex-count', String(Math.ceil(st.left - 1e-9)));
+      var key = st.round + st.phase; if (key !== exPh) { exPh = key; exBuzz(); }
+    } else if (st) { exPaceReset(); setText('ex-phase', 'done'); exPh = null; }
+    $('ex-list').textContent = exRoundsText();
   }
   /* resume() inside the tap; resolves true only if the context is really running (iOS may leave it suspended or never settle) */
   function exResume(cb) {
@@ -712,14 +817,21 @@ if (typeof module !== 'undefined') module.exports = TP;
     exResume(function (running) {
       if (!running) { exPausedMsg(); return; }
       setText('ex-mic', 'on', 'ok');
-      if (!wasRun) { exDet.reset(); exLastTickT = null; }
-      exMode = 'run'; setText('ex-msg', 'Listening. Breathe out slowly near the mic.');
+      if (!(wasRun && exSess && !exSess.done)) { exSess = new TP.BreathSession(exDet.floorDb); exSess.start(exNowT()); exPh = null; exLastTickT = null; }
+      exMode = 'run'; setText('ex-msg', EX_RUN_MSG);
     });
   });
-  $('ex-stop').addEventListener('click', function () { if (exOpening) exhaleStop(); else exMode = 'idle'; });
-  $('ex-reset').addEventListener('click', function () { exDet.reset(); exRender(-90, 0); });
+  $('ex-stop').addEventListener('click', function () { if (exOpening) exhaleStop(); else { exMode = 'idle'; exSess = null; exPh = null; exPaceReset(); $('ex-list').textContent = exRoundsText(); setText('ex-n', '0 / ' + TP.CONFIG.breath.rounds); } });
+  $('ex-reset').addEventListener('click', function () {
+    exPh = null;
+    if (exMode === 'run') { exSess = new TP.BreathSession(exDet.floorDb); exSess.start(exNowT()); } else { exSess = null; exPaceReset(); }
+    $('ex-list').textContent = exRoundsText(); setText('ex-n', '0 / ' + TP.CONFIG.breath.rounds);
+  });
   detectors.exhale = function () {
-    return { detected: exDet.accepted, extra: 'events ' + exDet.events.map(function (e) { return e.len.toFixed(1) + 's' + (e.ok ? '' : '(' + e.why + ')'); }).join(',') + ', floor ' + (exDet.floorDb === null ? 'n/a' : exDet.floorDb.toFixed(1)) };
+    var rs = exSess ? exSess.results : [], n = rs.filter(function (r) { return r.ok; }).length, fl = exDet.floorDb === null ? null : Math.round(exDet.floorDb * 10) / 10;
+    var rounds = rs.map(function (r) { return { round: r.round, hold: Math.round(r.hold), out: Math.round(r.out), ok: r.ok, voided: r.voided }; });
+    return { detected: n + ' / ' + TP.CONFIG.breath.rounds + ' rounds verified', extra: (rounds.length ? rounds.map(function (r) { return 'r' + r.round + ' hold ' + r.hold + '% out ' + r.out + '%' + (r.voided ? ' voided' : r.ok ? '' : ' not heard'); }).join(', ') : 'no rounds') + ', floor ' + (fl === null ? 'n/a' : fl + ' dB'),
+      fields: { roundsVerified: n, roundsTotal: TP.CONFIG.breath.rounds, rounds: rounds, floorDb: fl } };
   };
 
   renderLogs();
