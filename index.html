@@ -105,7 +105,7 @@ button:disabled{opacity:.45}
   <h2>4-4-8 Breathing (mic)</h2>
   <p class="small">1) Calibrate: stay quiet for 3 s. 2) Start, then follow the circle for 5 rounds: breathe IN 4 s through the nose, HOLD 4 s, BLOW OUT 8 s near the mic. Audio is only measured, never stored.</p>
   <p class="small warn" id="ex-notice">Take out your headphones or AirPods. This uses your phone's own microphone.</p>
-  <div class="banner" id="ex-hp" hidden><span id="ex-hp-text"></span><br><button id="ex-hp-ok">I've removed them</button></div>
+  <div class="banner" id="ex-hp" hidden><span id="ex-hp-text"></span></div>
   <button class="big" id="ex-cal">1. Calibrate (3 s quiet)</button>
   <button class="big" id="ex-start" disabled>2. Start 5 rounds</button>
   <button class="alt" id="ex-stop">Stop</button>
@@ -120,6 +120,10 @@ button:disabled{opacity:.45}
     <div class="cell"><b>Flatness</b><span class="sm" id="ex-flat">-</span></div>
     <div class="cell"><b>Mic</b><span class="sm" id="ex-mic">not started</span></div>
     <div class="cell"><b>Calibration</b><span class="sm" id="ex-calst">not done</span></div>
+    <div class="cell"><b>Quiet floor (raw / clamped)</b><span class="sm" id="ex-floor-read">-</span></div>
+    <div class="cell"><b>Breathe-out rise (90th pct)</b><span class="sm" id="ex-rise-read">-</span></div>
+    <div class="cell"><b>Breathe-out flatness (median)</b><span class="sm" id="ex-check-flat-read">-</span></div>
+    <div class="cell"><b>Proof thresholds (OUT)</b><span class="sm" id="ex-proof-read">-</span></div>
   </div>
   <b>Rounds</b>
   <pre class="small" id="ex-list">none</pre>
@@ -264,13 +268,21 @@ var TP = (function () {
     }
     return null;
   }
-  /* Calibration sanity. rawFloor: unclamped quiet level; floor: clamped; checkDb: frames from the 3 s "breathe out now" window. */
-  function calibrationVerdict(rawFloor, floor, checkDb, cfg) {
-    var c = cfg || CONFIG.exhale;
-    if (rawFloor < c.lowFloorDb) return { ok: false, why: 'floor too low', rise: null };
-    if (!checkDb || checkDb.length < 10) return { ok: false, why: 'no check data', rise: null };
-    var rise = percentile(checkDb, 0.9) - floor;
-    return rise >= c.minRiseDb ? { ok: true, why: 'ok', rise: rise } : { ok: false, why: 'no rise', rise: rise };
+  /* Calibration diagnostics. The breathe-out check advises, never prevents a round. */
+  function calibrationVerdict(rawFloor, floor, checkDb, checkFlat, cfg) {
+    if (!Array.isArray(checkFlat)) { cfg = checkFlat || cfg; checkFlat = null; }
+    var c = cfg || CONFIG.exhale, hasDb = checkDb && checkDb.length >= 10;
+    var rise = hasDb ? percentile(checkDb, 0.9) - floor : null;
+    var flatness = checkFlat && checkFlat.length ? percentile(checkFlat, 0.5) : null;
+    var why = rawFloor < c.lowFloorDb ? 'floor low' : !hasDb ? 'no check data' : rise < c.minRiseDb ? 'breath faint' : 'ok';
+    return { ok: why === 'ok', advisory: why !== 'ok', why: why, rise: rise, flatness: flatness };
+  }
+  function adaptiveBreathConfig(verdict, cfg) {
+    var base = cfg || CONFIG.breath, c = {}, k;
+    for (k in base) c[k] = base[k];
+    if (verdict && verdict.rise !== null && verdict.rise >= 3 && verdict.rise < 8) c.outRiseDb = Math.max(3, 0.6 * verdict.rise);
+    if (verdict && verdict.flatness !== null && verdict.flatness < 0.10) c.outFlatMin = Math.max(0.02, 0.6 * verdict.flatness);
+    return c;
   }
   function ExhaleDetector(cfg) { this.c = cfg || CONFIG.exhale; this.floorDb = null; this.calib = null; this.reset(); }
   ExhaleDetector.prototype.reset = function () {
@@ -294,10 +306,10 @@ var TP = (function () {
     this.floorDb = Math.max(this.rawFloorDb, this.c.minFloorDb); this.calib = null; return true;
   };
   /* "Breathe out now" check after calibration. */
-  ExhaleDetector.prototype.checkStart = function () { this.check = []; };
-  ExhaleDetector.prototype.checkFeed = function (db) { if (this.check) this.check.push(db); };
+  ExhaleDetector.prototype.checkStart = function () { this.check = []; this.checkFlat = []; };
+  ExhaleDetector.prototype.checkFeed = function (db, flat) { if (this.check) { this.check.push(db); if (typeof flat === 'number') this.checkFlat.push(flat); } };
   ExhaleDetector.prototype.checkEnd = function () {
-    var r = calibrationVerdict(this.rawFloorDb, this.floorDb, this.check, this.c); this.check = null; return r;
+    var r = calibrationVerdict(this.rawFloorDb, this.floorDb, this.check, this.checkFlat, this.c); this.check = null; this.checkFlat = null; this.calibration = r; return r;
   };
   ExhaleDetector.prototype.finish = function (t) {
     var c = this.c, len = this.lastActive - this.evStart, why = 'ok';
@@ -405,7 +417,7 @@ var TP = (function () {
     return { done: false, phase: ph, round: this.cur + 1, left: left, scale: sc, verified: verified, total: c.rounds };
   };
 
-  return { CONFIG: CONFIG, judgeRound: judgeRound, BreathSession: BreathSession, StillTracker: StillTracker, SquatCounter: SquatCounter, ExhaleDetector: ExhaleDetector, spectralFlatness: spectralFlatness, inFrame: inFrame, depthRatio: depthRatio, percentile: percentile, findHeadphoneLabel: findHeadphoneLabel, calibrationVerdict: calibrationVerdict };
+  return { CONFIG: CONFIG, judgeRound: judgeRound, BreathSession: BreathSession, StillTracker: StillTracker, SquatCounter: SquatCounter, ExhaleDetector: ExhaleDetector, spectralFlatness: spectralFlatness, inFrame: inFrame, depthRatio: depthRatio, percentile: percentile, findHeadphoneLabel: findHeadphoneLabel, calibrationVerdict: calibrationVerdict, adaptiveBreathConfig: adaptiveBreathConfig };
 })();
 if (typeof module !== 'undefined') module.exports = TP;
 </script>
@@ -426,7 +438,7 @@ if (typeof module !== 'undefined') module.exports = TP;
     screens.forEach(function (s) { $('s-' + s).hidden = s !== name; });
     if (name !== 'still') stillStopUi();
     if (name !== 'squat') squatStop();
-    if (name !== 'exhale') { exhaleStop(); exHpTapped = false; exHideHp(); }
+    if (name !== 'exhale') { exhaleStop(); exHideHp(); }
     renderLogs(); window.scrollTo(0, 0);
   }
   document.addEventListener('click', function (e) {
@@ -642,7 +654,7 @@ if (typeof module !== 'undefined') module.exports = TP;
   };
 
   /* ---------- Long Exhale ---------- */
-  var ac = null, an = null, exStream = null, exTimer = null, exDet = new TP.ExhaleDetector(), tbuf, fbuf, exMode = 'idle', exCalStart = 0, exNow = 0, exT0 = 0, exGen = 0, exOpening = false, exPaused = false, exLastTickT = null, exHp = false, exLabel = '', exHpTapped = false, exSess = null, exPh = null;
+  var ac = null, an = null, exStream = null, exTimer = null, exDet = new TP.ExhaleDetector(), tbuf, fbuf, exMode = 'idle', exCalStart = 0, exNow = 0, exT0 = 0, exGen = 0, exOpening = false, exPaused = false, exLastTickT = null, exHp = false, exLabel = '', exSess = null, exPh = null, exProof = null;
   function exNowT() { return (performance.now() - exT0) / 1000; }
   function exInterrupt() {
     if (!ac) return;
@@ -674,11 +686,21 @@ if (typeof module !== 'undefined') module.exports = TP;
       } catch (e) { if (!fin) { fin = true; clearTimeout(to); res(done()); } }
     });
   }
-  function exShowHp(text, soft) { $('ex-hp').hidden = false; $('ex-hp-text').textContent = text; $('ex-hp-ok').hidden = !!soft; }
+  function exShowHp(text) { $('ex-hp').hidden = false; $('ex-hp-text').textContent = text; }
   function exHideHp() { var e = $('ex-hp'); if (e) e.hidden = true; }
-  function exCalFail(msg) {
-    exMode = 'idle'; $('ex-start').disabled = true; $('ex-retry').hidden = false;
-    setText('ex-calst', 'failed', 'bad'); setText('ex-msg', msg, 'bad');
+  function exProofConfig(v) { return TP.adaptiveBreathConfig(v); }
+  function exSessionConfig() {
+    var base = TP.CONFIG.breath, c = {}, k;
+    for (k in base) c[k] = base[k];
+    if (exProof) { c.outRiseDb = exProof.outRiseDb; c.outFlatMin = exProof.outFlatMin; }
+    return c;
+  }
+  function exCalibrationReadout() {
+    var v = exDet.calibration, raw = exDet.rawFloorDb, floor = exDet.floorDb, proof = exProof || TP.CONFIG.breath;
+    setText('ex-floor-read', raw == null || floor === null ? '-' : raw.toFixed(1) + ' / ' + floor.toFixed(1) + ' dB');
+    setText('ex-rise-read', !v || v.rise === null ? '-' : '+' + v.rise.toFixed(1) + ' dB');
+    setText('ex-check-flat-read', !v || v.flatness === null ? '-' : v.flatness.toFixed(3));
+    setText('ex-proof-read', '+' + proof.outRiseDb.toFixed(1) + ' dB, flat ' + proof.outFlatMin.toFixed(3));
   }
   function openMic(cb) {
     if (exStream) { cb(); return; }
@@ -695,14 +717,8 @@ if (typeof module !== 'undefined') module.exports = TP;
       if (my !== exGen) { s.getTracks().forEach(function (t) { t.stop(); }); return; } /* left while enumerating */
       exOpening = false;
       exLabel = info.label;
-      if (info.found && !exHpTapped) { /* block: show the warning, release the mic, wait for "I've removed them" */
-        exHp = true; s.getTracks().forEach(function (t) { t.stop(); }); exhaleStop();
-        exShowHp('Headphones or a headset look connected (' + info.found + '). They erase breath sound. Take them out, then tap the button.');
-        $('ex-start').disabled = true; setText('ex-mic', 'blocked', 'bad'); return;
-      }
-      if (!info.found) exHpTapped = false;
-      exHp = !!info.found; /* tapped once already: let the user through, flag stays in the log */
-      if (exHp) exShowHp('Still seeing "' + info.found + '". Continuing anyway; if you cannot be heard, calibration will say so.', true); else exHideHp();
+      exHp = !!info.found;
+      if (exHp) exShowHp('Headphones or a headset look connected (' + info.found + '). This may make breath quieter; continuing with the phone mic check.') ; else exHideHp();
       try {
       exStream = s; var src = ac.createMediaStreamSource(s); an = ac.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
       src.connect(an); /* analyser only: not connected to speakers, nothing recorded */
@@ -718,7 +734,6 @@ if (typeof module !== 'undefined') module.exports = TP;
     });
   }
   var EX_RUN_MSG = 'Listening. Follow the circle: breathe in through your nose, hold, then blow out slowly near the mic.';
-  var HEAR_MSG = "We can't hear your breath. Remove headphones and hold the phone 20-30 cm from your mouth.";
   function exTick() {
     if (!an) return;
     an.getFloatTimeDomainData(tbuf); an.getFloatFrequencyData(fbuf);
@@ -739,17 +754,23 @@ if (typeof module !== 'undefined') module.exports = TP;
       setText('ex-calst', 'quiet... ' + Math.max(0, left).toFixed(1) + ' s', 'warn');
       if (left <= 0) {
         exMode = 'idle';
-        if (!exDet.calibrateEnd()) setText('ex-calst', 'failed', 'bad');
-        else if (exDet.rawFloorDb < TP.CONFIG.exhale.lowFloorDb) exCalFail(HEAR_MSG);
+        if (!exDet.calibrateEnd()) {
+          /* A sparse analyser must not trap someone behind calibration; use the conservative clamp and label it. */
+          exDet.rawFloorDb = null; exDet.floorDb = TP.CONFIG.exhale.minFloorDb;
+          exDet.calibration = { ok: false, advisory: true, why: 'no quiet data', rise: null, flatness: null };
+          exProof = exProofConfig(exDet.calibration); setText('ex-calst', 'limited reading', 'warn'); exCalibrationReadout();
+          $('ex-start').disabled = false; setText('ex-msg', 'Quiet reading was limited. You can start, or calibrate again for a better reading.', 'warn');
+        }
         else { exMode = 'check'; exCalStart = t; exDet.checkStart(); setText('ex-msg', 'Now breathe out slowly, 20-30 cm from your mouth, for 3 seconds...', 'warn'); }
       }
     } else if (exMode === 'check') {
-      exDet.checkFeed(db); var cl = TP.CONFIG.exhale.checkSec - (t - exCalStart);
+      exDet.checkFeed(db, flat); var cl = TP.CONFIG.exhale.checkSec - (t - exCalStart);
       setText('ex-calst', 'breathe out now... ' + Math.max(0, cl).toFixed(1) + ' s', 'warn');
       if (cl <= 0) {
-        var v = exDet.checkEnd();
-        if (v.ok) { exMode = 'idle'; setText('ex-calst', 'floor ' + exDet.floorDb.toFixed(1) + ' dB, breath +' + v.rise.toFixed(0) + ' dB', 'ok'); $('ex-start').disabled = false; $('ex-retry').hidden = true; setText('ex-msg', 'Calibrated. Tap "Start listening".'); }
-        else exCalFail(HEAR_MSG);
+        var v = exDet.checkEnd(); exProof = exProofConfig(v); exMode = 'idle';
+        setText('ex-calst', 'measured', v.advisory ? 'warn' : 'ok'); exCalibrationReadout();
+        $('ex-start').disabled = false; $('ex-retry').hidden = true;
+        setText('ex-msg', v.advisory ? 'Breath was faint. Hold the phone 20-30 cm away and blow a bit harder.' : 'Calibrated. Tap "Start listening".', v.advisory ? 'warn' : 'ok');
       }
     }
     exDet.flatS += TP.CONFIG.exhale.flatEma * (flat - exDet.flatS); /* smoothed flatness feeds the OUT proof */
@@ -769,7 +790,7 @@ if (typeof module !== 'undefined') module.exports = TP;
     return lines.join('\n');
   }
   function exRender(db, flat, t) {
-    var lo = -90, hi = 0, pct = function (d) { return Math.max(0, Math.min(100, (d - lo) / (hi - lo) * 100)) + '%'; }, c = TP.CONFIG.breath;
+    var lo = -90, hi = 0, pct = function (d) { return Math.max(0, Math.min(100, (d - lo) / (hi - lo) * 100)) + '%'; }, c = exSess ? exSess.c : (exProof || TP.CONFIG.breath);
     $('ex-bar').style.width = pct(db);
     if (exDet.floorDb !== null) { $('ex-floor').style.left = pct(exDet.floorDb); $('ex-thr').style.left = pct(exDet.floorDb + c.outRiseDb); }
     setText('ex-db', db.toFixed(0) + ' dB / ' + (exDet.floorDb === null ? '?' : exDet.floorDb.toFixed(0)));
@@ -799,7 +820,7 @@ if (typeof module !== 'undefined') module.exports = TP;
   }
   function exPausedMsg() { exMode = exMode === 'cal' ? 'idle' : exMode; setText('ex-mic', 'paused', 'warn'); setText('ex-msg', 'Mic paused, tap to resume'); }
   function exStartCal() {
-    $('ex-start').disabled = true; $('ex-retry').hidden = true;
+    $('ex-start').disabled = true; $('ex-retry').hidden = true; exProof = null; exDet.calibration = null; exCalibrationReadout();
     openMic(function () {
       exResume(function (running) {
         if (!running) { exMode = 'idle'; exPausedMsg(); return; }
@@ -810,28 +831,27 @@ if (typeof module !== 'undefined') module.exports = TP;
   }
   $('ex-cal').addEventListener('click', exStartCal);
   $('ex-retry').addEventListener('click', exStartCal);
-  $('ex-hp-ok').addEventListener('click', function () { exHpTapped = true; exhaleStop(); exHideHp(); exStartCal(); }); /* re-acquire the stream and re-check */
   $('ex-start').addEventListener('click', function () {
     if (!exStream) { setText('ex-msg', 'Microphone is off. Calibrate again.'); return; }
     var wasRun = exMode === 'run';
     exResume(function (running) {
       if (!running) { exPausedMsg(); return; }
       setText('ex-mic', 'on', 'ok');
-      if (!(wasRun && exSess && !exSess.done)) { exSess = new TP.BreathSession(exDet.floorDb); exSess.start(exNowT()); exPh = null; exLastTickT = null; }
+      if (!(wasRun && exSess && !exSess.done)) { exSess = new TP.BreathSession(exDet.floorDb, exSessionConfig()); exSess.start(exNowT()); exPh = null; exLastTickT = null; }
       exMode = 'run'; setText('ex-msg', EX_RUN_MSG);
     });
   });
   $('ex-stop').addEventListener('click', function () { if (exOpening) exhaleStop(); else { exMode = 'idle'; exSess = null; exPh = null; exPaceReset(); $('ex-list').textContent = exRoundsText(); setText('ex-n', '0 / ' + TP.CONFIG.breath.rounds); } });
   $('ex-reset').addEventListener('click', function () {
     exPh = null;
-    if (exMode === 'run') { exSess = new TP.BreathSession(exDet.floorDb); exSess.start(exNowT()); } else { exSess = null; exPaceReset(); }
+    if (exMode === 'run') { exSess = new TP.BreathSession(exDet.floorDb, exSessionConfig()); exSess.start(exNowT()); } else { exSess = null; exPaceReset(); }
     $('ex-list').textContent = exRoundsText(); setText('ex-n', '0 / ' + TP.CONFIG.breath.rounds);
   });
   detectors.exhale = function () {
-    var rs = exSess ? exSess.results : [], n = rs.filter(function (r) { return r.ok; }).length, fl = exDet.floorDb === null ? null : Math.round(exDet.floorDb * 10) / 10;
+    var rs = exSess ? exSess.results : [], n = rs.filter(function (r) { return r.ok; }).length, fl = exDet.floorDb === null ? null : Math.round(exDet.floorDb * 10) / 10, raw = exDet.rawFloorDb == null ? null : Math.round(exDet.rawFloorDb * 10) / 10, cal = exDet.calibration || {}, proof = exProof || TP.CONFIG.breath;
     var rounds = rs.map(function (r) { return { round: r.round, hold: Math.round(r.hold), out: Math.round(r.out), ok: r.ok, voided: r.voided }; });
-    return { detected: n + ' / ' + TP.CONFIG.breath.rounds + ' rounds verified', extra: (rounds.length ? rounds.map(function (r) { return 'r' + r.round + ' hold ' + r.hold + '% out ' + r.out + '%' + (r.voided ? ' voided' : r.ok ? '' : ' not heard'); }).join(', ') : 'no rounds') + ', floor ' + (fl === null ? 'n/a' : fl + ' dB'),
-      fields: { roundsVerified: n, roundsTotal: TP.CONFIG.breath.rounds, rounds: rounds, floorDb: fl } };
+    return { detected: n + ' / ' + TP.CONFIG.breath.rounds + ' rounds verified', extra: (rounds.length ? rounds.map(function (r) { return 'r' + r.round + ' hold ' + r.hold + '% out ' + r.out + '%' + (r.voided ? ' voided' : r.ok ? '' : ' not heard'); }).join(', ') : 'no rounds') + ', floor raw/clamped ' + (raw === null ? 'n/a' : raw + '/' + fl + ' dB') + ', check rise ' + (cal.rise === null || cal.rise === undefined ? 'n/a' : '+' + cal.rise.toFixed(1) + ' dB') + ', check median flatness ' + (cal.flatness === null || cal.flatness === undefined ? 'n/a' : cal.flatness.toFixed(3)) + ', proof +' + proof.outRiseDb.toFixed(1) + ' dB flat ' + proof.outFlatMin.toFixed(3),
+      fields: { roundsVerified: n, roundsTotal: TP.CONFIG.breath.rounds, rounds: rounds, floorDb: fl, rawFloorDb: raw, checkRiseDb: cal.rise === undefined ? null : cal.rise, checkMedianFlatness: cal.flatness === undefined ? null : cal.flatness, outRiseDb: proof.outRiseDb, outFlatMin: proof.outFlatMin } };
   };
 
   renderLogs();
