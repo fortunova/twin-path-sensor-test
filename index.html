@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Twin Path - sensor prototype</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#14171f;color:#e8ecf4;font:16px/1.4 system-ui,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:480px;margin:0 auto;padding:12px 14px 40px}
+h1{font-size:20px;margin:6px 0}
+h2{font-size:18px;margin:6px 0}
+p.small,.small{font-size:13px;color:#9aa4b8}
+button{min-height:48px;min-width:48px;padding:10px 16px;border:0;border-radius:10px;background:#3b82f6;color:#fff;font:600 16px system-ui,sans-serif;margin:4px 4px 4px 0}
+button.alt{background:#2a3142}
+button.big{width:100%;margin:6px 0;font-size:18px}
+button:disabled{opacity:.45}
+.banner{background:#7a1f1f;color:#fff;padding:10px;border-radius:8px;margin:8px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.cell{background:#1e2330;border-radius:10px;padding:8px 10px}
+.cell b{display:block;font-size:12px;font-weight:600;color:#9aa4b8;text-transform:uppercase}
+.cell span{display:block;font-size:24px;font-weight:700;word-break:break-word}
+.cell span.sm{font-size:16px}
+.ok{color:#4ade80}.bad{color:#f87171}.warn{color:#fbbf24}
+.meter{height:26px;background:#1e2330;border-radius:6px;position:relative;overflow:hidden;margin:6px 0}
+.meter i{position:absolute;left:0;top:0;bottom:0;background:#3b82f6;width:0}
+.meter u{position:absolute;top:0;bottom:0;width:2px;background:#fbbf24}
+.meter s{position:absolute;top:0;bottom:0;width:2px;background:#4ade80}
+.cam{position:relative;width:100%;aspect-ratio:3/4;margin-top:8px;background:#000;border-radius:10px;overflow:hidden;transform:scaleX(-1)}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.log{background:#1e2330;border-radius:10px;padding:10px;margin-top:14px}
+.log input{width:90px;min-height:44px;font-size:18px;padding:6px;border-radius:8px;border:1px solid #444;background:#0e1118;color:#fff}
+.log pre{white-space:pre-wrap;word-break:break-all;font-size:12px;max-height:200px;overflow:auto;background:#0e1118;padding:6px;border-radius:6px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<div id="secure-banner" class="banner" hidden></div>
+
+<section id="s-menu">
+  <h1>Twin Path: sensor prototype</h1>
+  <p class="small">Test tool, not the game. Tests the 3 real-life checks from GDD section 4. Nothing is recorded or uploaded; the trial log stays in this browser.</p>
+  <button class="big" data-open="still">1. Still Pond (motion)</button>
+  <button class="big" data-open="squat">2. Squat Duel (camera)</button>
+  <button class="big" data-open="exhale">3. Long Exhale (mic)</button>
+  <div class="log">
+    <b>Trial log (all tests)</b>
+    <pre id="log-menu"></pre>
+    <button class="alt" data-copy>Copy log</button>
+    <button class="alt" data-clearlog>Clear log</button>
+  </div>
+</section>
+
+<section id="s-still" hidden>
+  <button class="alt" data-back>&larr; Menu</button>
+  <h2>Still Pond</h2>
+  <p class="small">Tap Start, then lay the phone flat, screen down, and keep it still. Picking it up pauses the timer.</p>
+  <button class="big" id="still-start">Start</button>
+  <button class="alt" id="still-reset">Reset</button>
+  <div class="grid">
+    <div class="cell"><b>Motion permission</b><span class="sm" id="st-perm">not asked</span></div>
+    <div class="cell"><b>Wake lock</b><span class="sm" id="st-wl">not held</span></div>
+    <div class="cell"><b>Face down</b><span id="st-fd">-</span></div>
+    <div class="cell"><b>Still</b><span id="st-still">-</span></div>
+    <div class="cell"><b>Seconds counted</b><span id="st-sec">0.0</span></div>
+    <div class="cell"><b>Pauses</b><span id="st-pau">0</span></div>
+    <div class="cell"><b>Timer</b><span class="sm" id="st-run">stopped</span></div>
+    <div class="cell"><b>Sensor data</b><span class="sm" id="st-data">none yet</span></div>
+  </div>
+  <div class="small" id="st-msg"></div>
+  <div class="log" data-log="still"></div>
+</section>
+
+<section id="s-squat" hidden>
+  <button class="alt" data-back>&larr; Menu</button>
+  <h2>Squat Duel</h2>
+  <p class="small">Prop the phone up, step back until shoulders to knees are in view, then squat.</p>
+  <button class="big" id="squat-start">Start camera</button>
+  <button class="alt" id="squat-stop">Stop</button>
+  <button class="alt" id="squat-reset">Reset count</button>
+  <div class="grid">
+    <div class="cell"><b>Squats</b><span id="sq-count">0</span></div>
+    <div class="cell"><b>Body in frame</b><span id="sq-body">-</span></div>
+    <div class="cell"><b>Model load</b><span class="sm" id="sq-load">not loaded</span></div>
+    <div class="cell"><b>Start to 1st squat</b><span class="sm" id="sq-first">-</span></div>
+    <div class="cell"><b>Depth ratio</b><span class="sm" id="sq-r">-</span></div>
+    <div class="cell"><b>Phase</b><span class="sm" id="sq-phase">-</span></div>
+  </div>
+  <div class="small" id="sq-msg"></div>
+  <div class="cam"><video id="sq-video" playsinline muted></video><canvas id="sq-canvas"></canvas></div>
+  <div class="log" data-log="squat"></div>
+</section>
+
+<section id="s-exhale" hidden>
+  <button class="alt" data-back>&larr; Menu</button>
+  <h2>Long Exhale</h2>
+  <p class="small">1) Calibrate: stay quiet for 3 s. 2) Start, then breathe out slowly near the mic, 4-10 s each, 2 s apart. Audio is only measured, never stored.</p>
+  <p class="small warn" id="ex-notice">Take out your headphones or AirPods. This uses your phone's own microphone.</p>
+  <div class="banner" id="ex-hp" hidden><span id="ex-hp-text"></span><br><button id="ex-hp-ok">I've removed them</button></div>
+  <button class="big" id="ex-cal">1. Calibrate (3 s quiet)</button>
+  <button class="big" id="ex-start" disabled>2. Start listening</button>
+  <button class="alt" id="ex-stop">Stop</button>
+  <button class="alt" id="ex-reset">Reset set</button>
+  <button class="big" id="ex-retry" hidden>Retry calibration</button>
+  <div class="meter" id="ex-meter"><i id="ex-bar"></i><u id="ex-thr"></u><s id="ex-floor"></s></div>
+  <div class="grid">
+    <div class="cell"><b>Exhales</b><span id="ex-n">0 / 5</span></div>
+    <div class="cell"><b>Now</b><span class="sm" id="ex-now">idle</span></div>
+    <div class="cell"><b>Level / floor</b><span class="sm" id="ex-db">-</span></div>
+    <div class="cell"><b>Flatness</b><span class="sm" id="ex-flat">-</span></div>
+    <div class="cell"><b>Mic</b><span class="sm" id="ex-mic">not started</span></div>
+    <div class="cell"><b>Calibration</b><span class="sm" id="ex-calst">not done</span></div>
+  </div>
+  <b>Detected events</b>
+  <pre class="small" id="ex-list">none</pre>
+  <div class="small" id="ex-msg"></div>
+  <div class="log" data-log="exhale"></div>
+</section>
+</main>
+
+<script id="logic">
+/* Pure logic: no DOM. Time is in seconds. Thresholds live in TP.CONFIG. */
+var TP = (function () {
+  var CONFIG = {
+    still: { faceDownUpz: -0.94, accelStd: 0.15, rotMax: 12, window: 1.0, minSamples: 5, staleSec: 1.0, resumeDebounce: 0.5, gapSec: 0.5 },
+    squat: { downR: 0.40, upR: 0.75, minCycleSec: 0.7, minDownSec: 0.15, armSec: 0.5, visMin: 0.5, edge: 0.02, ema: 0.5 },
+    exhale: { enterDb: 8, stayDb: 5, flatMin: 0.10, flatEma: 0.3, bridgeSec: 0.4, minLen: 4, maxLen: 10, minQuiet: 2, maxDbStd: 6, minFloorDb: -80, minEventLen: 0.5, gapSec: 0.5, target: 5, calSec: 3, fftLoHz: 200, fftHiHz: 6000, lowFloorDb: -85, checkSec: 3, minRiseDb: 6, hpWords: ['airpods', 'headphone', 'headset', 'bluetooth', 'buds', 'earphone'] }
+  };
+
+  /* ---------- Still Pond ---------- */
+  function StillTracker(cfg) {
+    this.c = cfg || CONFIG.still;
+    this.samples = []; this.upz = null; this.upzT = -1e9;
+    this.seconds = 0; this.pauses = 0; this.counting = false; this.lastT = null; this.okSince = null; this.running = false;
+  }
+  /* axes = [x, y, z] raw acceleration (optional); variation is measured per axis AND on the magnitude. */
+  StillTracker.prototype.pushMotion = function (t, accMag, rotMag, axes) {
+    var last = this.samples[this.samples.length - 1];
+    if (last && t - last.t > this.c.gapSec) this.samples = []; /* sensor gap: old samples say nothing about the gap */
+    this.samples.push({ t: t, a: accMag, r: rotMag, x: axes ? axes[0] : null, y: axes ? axes[1] : null, z: axes ? axes[2] : null });
+    while (this.samples.length && this.samples[0].t < t - this.c.window) this.samples.shift();
+  };
+  StillTracker.prototype.setOrientation = function (t, betaDeg, gammaDeg) {
+    var d = Math.PI / 180;
+    this.upz = Math.cos(betaDeg * d) * Math.cos(gammaDeg * d); this.upzT = t;
+  };
+  StillTracker.prototype.isFaceDown = function (t) {
+    return this.upz !== null && t - this.upzT < this.c.staleSec && this.upz < this.c.faceDownUpz;
+  };
+  StillTracker.prototype.isStill = function (t) {
+    var s = this.samples.filter(function (x) { return x.t >= t - this.c.window; }, this);
+    if (s.length < this.c.minSamples || t - s[s.length - 1].t > this.c.staleSec) return false;
+    var sd = 0, i, keys = ['a', 'x', 'y', 'z'];
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k]; if (s[0][key] === null) continue;
+      var m = 0; for (i = 0; i < s.length; i++) m += s[i][key]; m /= s.length;
+      var v = 0; for (i = 0; i < s.length; i++) v += (s[i][key] - m) * (s[i][key] - m);
+      sd = Math.max(sd, Math.sqrt(v / s.length));
+    }
+    var rmax = 0;
+    for (i = 0; i < s.length; i++) if (s[i].r != null && s[i].r > rmax) rmax = s[i].r;
+    return sd < this.c.accelStd && rmax < this.c.rotMax;
+  };
+  StillTracker.prototype.start = function (t) { this.running = true; this.lastT = t; this.okSince = null; };
+  StillTracker.prototype._break = function () { if (this.counting) { this.pauses++; this.counting = false; } this.okSince = null; };
+  /* Page hidden / sensor interruption: unobserved time never counts; samples are dropped. */
+  StillTracker.prototype.interrupt = function (t) { this._break(); this.samples = []; this.lastT = t; };
+  /* wlHeld must be exactly true: time counts only while a wake lock sentinel is held. */
+  StillTracker.prototype.tick = function (t, visible, wlHeld) {
+    var fd = this.isFaceDown(t), st = this.isStill(t), good = this.running && visible && fd && st && wlHeld === true;
+    var dt = this.lastT === null ? 0 : t - this.lastT; this.lastT = t;
+    if (dt > this.c.gapSec) { dt = 0; this._break(); } /* timer starved: that time was not observed */
+    if (!good) {
+      this._break();
+    } else {
+      if (this.okSince === null) this.okSince = t;
+      if (!this.counting && t - this.okSince >= (this.seconds > 0 ? this.c.resumeDebounce : this.c.resumeDebounce)) this.counting = true;
+      if (this.counting) this.seconds += dt;
+    }
+    return { faceDown: fd, still: st, counting: this.counting, seconds: this.seconds, pauses: this.pauses };
+  };
+
+  /* ---------- Squat Duel ---------- */
+  var L = { LS: 11, RS: 12, LH: 23, RH: 24, LK: 25, RK: 26 };
+  function inFrame(lm, cfg) {
+    if (!lm) return false;
+    var idx = [L.LS, L.RS, L.LH, L.RH, L.LK, L.RK];
+    for (var i = 0; i < idx.length; i++) {
+      var p = lm[idx[i]];
+      if (!p || (p.visibility != null && p.visibility < cfg.visMin) || p.x < cfg.edge || p.x > 1 - cfg.edge || p.y < cfg.edge || p.y > 1 - cfg.edge) return false;
+    }
+    return true;
+  }
+  /* r = (kneeY - hipY) / torso length. Standing ~1, hips at knee height ~0. */
+  function depthRatio(lm) {
+    var sy = (lm[L.LS].y + lm[L.RS].y) / 2, hy = (lm[L.LH].y + lm[L.RH].y) / 2, ky = (lm[L.LK].y + lm[L.RK].y) / 2;
+    var torso = hy - sy; if (torso < 0.05) return null;
+    return (ky - hy) / torso;
+  }
+  function SquatCounter(cfg) {
+    this.c = cfg || CONFIG.squat; this.reset();
+  }
+  SquatCounter.prototype.reset = function () {
+    this.count = 0; this.phase = 'no body'; this.r = null; this.bodySince = null; this.tDown = 0; this.tCycle = 0; this.lastCount = -1e9; this.firstCountT = null; this.inFrame = false;
+  };
+  SquatCounter.prototype.update = function (t, lm) {
+    var c = this.c, inf = inFrame(lm, c), r = inf ? depthRatio(lm) : null;
+    if (r === null) {
+      this.inFrame = inf; this.bodySince = null; this.phase = inf ? 'bad pose' : 'no body'; this.r = null; return this;
+    }
+    this.inFrame = true;
+    this.r = this.r === null ? r : this.r + c.ema * (r - this.r);
+    if (this.bodySince === null) this.bodySince = t;
+    var armed = t - this.bodySince >= c.armSec;
+    if (this.phase === 'no body' || this.phase === 'bad pose') this.phase = 'wait';
+    if (this.phase === 'wait') { if (armed && this.r > c.upR) this.phase = 'up'; }
+    else if (this.phase === 'up') { if (this.r < c.downR) { this.phase = 'down'; this.tDown = t; } else if (this.r > c.upR) this.tCycle = t; }
+    else if (this.phase === 'down') {
+      if (this.r > c.upR) {
+        this.phase = 'up';
+        if (t - this.tDown >= c.minDownSec && t - this.tCycle >= c.minCycleSec) {
+          this.count++; this.lastCount = t; if (this.firstCountT === null) this.firstCountT = t;
+        }
+        this.tCycle = t;
+      }
+    }
+    return this;
+  };
+
+  /* ---------- Long Exhale ---------- */
+  /* dbArr: AnalyserNode float frequency data (dB). Returns geometric/arith mean of power in band, 0..1. */
+  function spectralFlatness(dbArr, binHz, loHz, hiHz) {
+    var lo = Math.max(1, Math.round(loHz / binHz)), hi = Math.min(dbArr.length - 1, Math.round(hiHz / binHz)), n = 0, sl = 0, sp = 0;
+    for (var i = lo; i <= hi; i++) {
+      var p = Math.pow(10, Math.max(dbArr[i], -200) / 10);
+      sl += Math.log(p + 1e-30); sp += p; n++;
+    }
+    if (!n || sp <= 0) return 0;
+    return Math.exp(sl / n) / (sp / n);
+  }
+  function percentile(arr, q) {
+    var a = arr.slice().sort(function (x, y) { return x - y; });
+    return a.length ? a[Math.min(a.length - 1, Math.floor(q * a.length))] : -100;
+  }
+  /* Headphones: first label containing a headset word (case-insensitive), else null. Empty/unknown labels never match. */
+  function findHeadphoneLabel(labels, words) {
+    words = words || CONFIG.exhale.hpWords;
+    for (var i = 0; i < (labels || []).length; i++) {
+      var l = labels[i]; if (typeof l !== 'string' || !l) continue;
+      var low = l.toLowerCase();
+      for (var j = 0; j < words.length; j++) if (low.indexOf(words[j]) >= 0) return l;
+    }
+    return null;
+  }
+  /* Calibration sanity. rawFloor: unclamped quiet level; floor: clamped; checkDb: frames from the 3 s "breathe out now" window. */
+  function calibrationVerdict(rawFloor, floor, checkDb, cfg) {
+    var c = cfg || CONFIG.exhale;
+    if (rawFloor < c.lowFloorDb) return { ok: false, why: 'floor too low', rise: null };
+    if (!checkDb || checkDb.length < 10) return { ok: false, why: 'no check data', rise: null };
+    var rise = percentile(checkDb, 0.9) - floor;
+    return rise >= c.minRiseDb ? { ok: true, why: 'ok', rise: rise } : { ok: false, why: 'no rise', rise: rise };
+  }
+  function ExhaleDetector(cfg) { this.c = cfg || CONFIG.exhale; this.floorDb = null; this.calib = null; this.reset(); }
+  ExhaleDetector.prototype.reset = function () {
+    this.events = []; this.accepted = 0; this.flatS = 0; this.inEv = false; this.evStart = 0; this.lastActive = -1e9; this.lastEnd = -1e9; this.evDb = []; this.active = false; this.curLen = 0;
+    this.lastFeedT = null; this.loudOn = false; this.quietStart = null; this.maxQuiet = 0; this.evQuiet = 0;
+  };
+  /* Unobserved time (page hidden, audio interrupted, analysis gap): drop the running event, restart the quiet clock. */
+  ExhaleDetector.prototype.interrupt = function (t) {
+    if (this.inEv) {
+      var len = this.lastActive - this.evStart;
+      if (len >= this.c.minEventLen) this.events.push({ start: this.evStart, len: len, ok: false, why: 'interrupted', dbStd: 0 });
+    }
+    this.inEv = false; this.evDb = []; this.active = false; this.curLen = 0; this.loudOn = false;
+    this.lastEnd = t; this.quietStart = null; this.maxQuiet = 0; this.lastFeedT = t;
+  };
+  ExhaleDetector.prototype.calibrateStart = function () { this.calib = []; };
+  ExhaleDetector.prototype.calibrateFeed = function (db) { if (this.calib) this.calib.push(db); };
+  ExhaleDetector.prototype.calibrateEnd = function () {
+    if (!this.calib || this.calib.length < 10) { this.calib = null; return false; }
+    this.rawFloorDb = percentile(this.calib, 0.9); /* before the minFloorDb clamp: used by the headset-mic check */
+    this.floorDb = Math.max(this.rawFloorDb, this.c.minFloorDb); this.calib = null; return true;
+  };
+  /* "Breathe out now" check after calibration. */
+  ExhaleDetector.prototype.checkStart = function () { this.check = []; };
+  ExhaleDetector.prototype.checkFeed = function (db) { if (this.check) this.check.push(db); };
+  ExhaleDetector.prototype.checkEnd = function () {
+    var r = calibrationVerdict(this.rawFloorDb, this.floorDb, this.check, this.c); this.check = null; return r;
+  };
+  ExhaleDetector.prototype.finish = function (t) {
+    var c = this.c, len = this.lastActive - this.evStart, why = 'ok';
+    var m = 0, i; for (i = 0; i < this.evDb.length; i++) m += this.evDb[i]; m /= (this.evDb.length || 1);
+    var v = 0; for (i = 0; i < this.evDb.length; i++) v += (this.evDb[i] - m) * (this.evDb[i] - m);
+    var sd = Math.sqrt(v / (this.evDb.length || 1));
+    if (len < c.minLen) why = 'too short';
+    else if (len > c.maxLen) why = 'too long';
+    else if (this.lastEnd > -1e8 && this.evQuiet < c.minQuiet) why = 'too soon after previous';
+    else if (sd > c.maxDbStd) why = 'uneven (bursty)';
+    var okEv = why === 'ok' && this.accepted < c.target;
+    if (okEv) this.accepted++;
+    if (len >= c.minEventLen) this.events.push({ start: this.evStart, len: len, ok: okEv, why: why, dbStd: sd });
+    if (len >= c.minEventLen) this.lastEnd = this.lastActive;
+    this.inEv = false; this.evDb = []; this.maxQuiet = 0;
+  };
+  /* Feed one analysis frame. */
+  ExhaleDetector.prototype.feed = function (t, db, flat) {
+    var c = this.c;
+    if (this.lastFeedT !== null && t - this.lastFeedT > c.gapSec) this.interrupt(t);
+    this.lastFeedT = t;
+    this.flatS += c.flatEma * (flat - this.flatS);
+    if (this.floorDb === null) return this;
+    /* quiet = loudness alone (never spectral flatness): loud tonal sound is not quiet */
+    var thr = this.floorDb + (this.loudOn ? c.stayDb : c.enterDb);
+    var loud = db > thr, flatOk = this.flatS >= c.flatMin;
+    this.loudOn = loud;
+    if (loud) {
+      if (this.quietStart !== null) { this.maxQuiet = Math.max(this.maxQuiet, t - Math.max(this.quietStart, this.lastEnd)); this.quietStart = null; }
+    } else if (this.quietStart === null) this.quietStart = t;
+    this.active = loud && flatOk;
+    if (this.active) {
+      if (!this.inEv) { this.inEv = true; this.evStart = t; this.evDb = []; this.evQuiet = this.maxQuiet; }
+      this.lastActive = t; this.evDb.push(db);
+    } else if (this.inEv && t - this.lastActive > c.bridgeSec) {
+      this.finish(t);
+    }
+    this.curLen = this.inEv ? this.lastActive - this.evStart : 0;
+    return this;
+  };
+
+  return { CONFIG: CONFIG, StillTracker: StillTracker, SquatCounter: SquatCounter, ExhaleDetector: ExhaleDetector, spectralFlatness: spectralFlatness, inFrame: inFrame, depthRatio: depthRatio, percentile: percentile, findHeadphoneLabel: findHeadphoneLabel, calibrationVerdict: calibrationVerdict };
+})();
+if (typeof module !== 'undefined') module.exports = TP;
+</script>
+
+<script id="app">
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  function setText(id, v, cls) { var e = $(id); e.textContent = v; e.className = (e.className.replace(/\b(ok|bad|warn)\b/g, '').trim() + ' ' + (cls || '')).trim(); }
+  var screens = ['menu', 'still', 'squat', 'exhale'], current = 'menu';
+  var secure = window.isSecureContext !== false;
+  if (!secure) {
+    var b = $('secure-banner'); b.hidden = false;
+    b.textContent = 'This page is not in a secure context. Camera, microphone and motion sensors need https:// or http://localhost. Open it from an https link or use "npm run serve-proto" on a computer.';
+  }
+  function show(name) {
+    current = name;
+    screens.forEach(function (s) { $('s-' + s).hidden = s !== name; });
+    if (name !== 'still') stillStopUi();
+    if (name !== 'squat') squatStop();
+    if (name !== 'exhale') { exhaleStop(); exHpTapped = false; exHideHp(); }
+    renderLogs(); window.scrollTo(0, 0);
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('button') : null; if (!t) return;
+    if (t.dataset.open) show(t.dataset.open);
+    else if (t.hasAttribute('data-back')) show('menu');
+    else if (t.hasAttribute('data-copy')) copyLog();
+    else if (t.hasAttribute('data-clearlog')) { try { localStorage.removeItem(LOGKEY); } catch (x) {} renderLogs(); }
+    else if (t.dataset.logit) logResult(t.dataset.logit);
+  });
+
+  /* ---------- trial log ---------- */
+  var LOGKEY = 'tp-proto-log', detectors = {};
+  function readLog() { try { return JSON.parse(localStorage.getItem(LOGKEY) || '[]'); } catch (e) { return []; } }
+  function writeLog(a) { try { localStorage.setItem(LOGKEY, JSON.stringify(a)); } catch (e) {} }
+  function logText(list) {
+    return 'Twin Path sensor prototype log\nUA: ' + navigator.userAgent + '\n' + list.map(function (r) {
+      return r.time + ' | ' + r.test + ' | expected ' + (r.expected === '' ? '?' : r.expected) + ' | detected ' + r.detected + ' | ' + r.extra + (r.test === 'exhale' ? ' | headphones ' + (r.headphonesDetected ? 'YES' : 'no') + ' | mic "' + (r.deviceLabel || 'unknown') + '"' : '') + (r.note ? ' | note: ' + r.note : '');
+    }).join('\n');
+  }
+  function logResult(test) {
+    var exp = document.querySelector('[data-log="' + test + '"] input.exp').value.trim();
+    var note = document.querySelector('[data-log="' + test + '"] input.note').value.trim();
+    var d = detectors[test] ? detectors[test]() : { detected: '?', extra: '' };
+    var a = readLog();
+    a.push({ time: new Date().toISOString(), test: test, expected: exp, detected: d.detected, extra: d.extra, note: note, ua: navigator.userAgent, headphonesDetected: !!exHp, deviceLabel: exLabel });
+    writeLog(a); renderLogs();
+  }
+  function copyLog() {
+    var txt = logText(readLog());
+    function fallback() {
+      var ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).catch(fallback); else fallback();
+  }
+  function renderLogs() {
+    var all = readLog();
+    $('log-menu').textContent = all.length ? logText(all) : 'No trials logged yet.';
+    var boxes = document.querySelectorAll('[data-log]');
+    Array.prototype.forEach.call(boxes, function (box) {
+      var test = box.getAttribute('data-log');
+      if (!box.querySelector('input.exp')) {
+        box.innerHTML = '<b>Log result</b><br><label class="small">Expected count (what really happened)</label><br>' +
+          '<input class="exp" type="number" inputmode="numeric" min="0"> <input class="note" type="text" placeholder="note (person, lighting...)" style="width:60%;font-size:14px;min-height:44px">' +
+          '<br><button data-logit="' + test + '">Log result</button><button class="alt" data-copy>Copy log</button><pre class="lg"></pre>';
+      }
+      var mine = all.filter(function (r) { return r.test === test; });
+      box.querySelector('pre.lg').textContent = mine.length ? logText(mine).split('\n').slice(2).join('\n') : 'No trials for this test yet.';
+    });
+  }
+
+  /* ---------- wake lock ---------- */
+  /* wl is non-null only while a sentinel is actually held. wlWant = a screen needs it: re-request after any release. */
+  var wl = null, wlWant = false, wlPending = false, wlTryT = -1e9, wlCb = function () {};
+  function wlSupported() { return 'wakeLock' in navigator; }
+  function wlIsHeld() { return wl !== null; }
+  function wlRequest() {
+    if (!wlWant || wl || wlPending) return;
+    if (!wlSupported()) { wlCb('not available'); return; }
+    wlPending = true; wlTryT = performance.now();
+    var p; try { p = navigator.wakeLock.request('screen'); } catch (e) { p = Promise.reject(e); }
+    p.then(function (sen) {
+      wlPending = false;
+      if (!wlWant) { try { sen.release(); } catch (e) {} return; }
+      wl = sen; wlCb('held');
+      sen.addEventListener('release', function () {
+        if (wl === sen) wl = null;
+        wlCb('released');
+        if (wlWant && document.visibilityState === 'visible') wlRequest();
+      });
+    }, function (e) { wlPending = false; wlCb('denied (' + (e && e.name) + ')'); });
+  }
+  function wlAcquire(cb) { wlWant = true; wlCb = cb || function () {}; wlRequest(); }
+  function wlRelease() { wlWant = false; if (wl) { var sen = wl; wl = null; try { sen.release(); } catch (e) {} } }
+
+  /* ---------- Still Pond ---------- */
+  var tracker = null, stillTimer = null, motionOn = false, motionCount = 0, orientCount = 0, stillWl = 'not held';
+  function stillStopUi() { if (stillTimer) { clearInterval(stillTimer); stillTimer = null; } if (tracker) tracker.running = false; wlRelease(); window.removeEventListener('devicemotion', onMotion); window.removeEventListener('deviceorientation', onOrient); motionOn = false; setText('st-run', 'stopped'); }
+  function onMotion(e) {
+    var a = e.accelerationIncludingGravity, r = e.rotationRate; if (!a || a.x == null) return;
+    motionCount++;
+    var rot = r && r.alpha != null ? Math.sqrt(r.alpha * r.alpha + r.beta * r.beta + r.gamma * r.gamma) : null;
+    tracker.pushMotion(performance.now() / 1000, Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z), rot, [a.x, a.y, a.z]);
+  }
+  function onOrient(e) { if (e.beta == null || e.gamma == null) return; orientCount++; tracker.setOrientation(performance.now() / 1000, e.beta, e.gamma); }
+  function reqPerm(Cls) {
+    if (typeof Cls !== 'undefined' && typeof Cls.requestPermission === 'function') return Cls.requestPermission();
+    return Promise.resolve('not required');
+  }
+  $('still-start').addEventListener('click', function () {
+    if (typeof DeviceMotionEvent === 'undefined') { setText('st-perm', 'not available', 'bad'); setText('st-msg', 'Motion sensor: not available on this device/browser.'); return; }
+    stillStopUi();
+    tracker = new TP.StillTracker(); motionCount = 0; orientCount = 0;
+    /* both requests start synchronously inside the tap (iOS needs the user gesture) */
+    var p1 = reqPerm(DeviceMotionEvent), p2 = typeof DeviceOrientationEvent !== 'undefined' ? reqPerm(DeviceOrientationEvent) : Promise.resolve('not required');
+    Promise.all([p1.catch(function (e) { return 'denied'; }), p2.catch(function (e) { return 'denied'; })]).then(function (res) {
+      var granted = res[0] === 'granted' || res[0] === 'not required';
+      setText('st-perm', res[0] === 'not required' ? 'not required (Android/desktop)' : res[0], granted ? 'ok' : 'bad');
+      if (!granted) { setText('st-msg', 'Motion permission was refused. On iOS, close the tab and reopen to be asked again.'); return; }
+      window.addEventListener('devicemotion', onMotion); window.addEventListener('deviceorientation', onOrient); motionOn = true;
+      wlAcquire(function (s) { stillWl = s; setText('st-wl', s, s === 'held' ? 'ok' : 'warn'); });
+      tracker.start(performance.now() / 1000);
+      setText('st-msg', 'Running. Lay the phone flat, screen down, and keep it still.');
+      stillTimer = setInterval(stillTick, 100);
+    });
+  });
+  $('still-reset').addEventListener('click', function () { if (tracker) { var run = tracker.running; tracker = new TP.StillTracker(); if (run) tracker.start(performance.now() / 1000); } setText('st-sec', '0.0'); setText('st-pau', '0'); });
+  function stillTick() {
+    if (!tracker) return;
+    var t = performance.now() / 1000, s = tracker.tick(t, document.visibilityState === 'visible', wlIsHeld());
+    if (wlWant && !wl && !wlPending && document.visibilityState === 'visible' && performance.now() - wlTryT > 3000) wlRequest();
+    setText('st-fd', s.faceDown ? 'YES' : 'no', s.faceDown ? 'ok' : 'bad');
+    setText('st-still', s.still ? 'YES' : 'no', s.still ? 'ok' : 'bad');
+    setText('st-sec', s.seconds.toFixed(1)); setText('st-pau', String(s.pauses));
+    setText('st-run', s.counting ? 'COUNTING' : 'paused', s.counting ? 'ok' : 'warn');
+    setText('st-data', 'motion ' + motionCount + ' / orient ' + orientCount, (motionCount && orientCount) ? '' : 'warn');
+    if (t - tracker.lastT < 1 && motionCount === 0 && orientCount === 0 && !window._noData) { /* wait for sensors */ }
+    if (!wlIsHeld()) setText('st-msg', 'No screen wake lock held: time is not counted until it is.');
+    else if (motionCount === 0 && orientCount === 0) setText('st-msg', 'No sensor data yet. If this stays so, the motion sensor is not available here (desktop?).');
+  }
+  document.addEventListener('visibilitychange', function () {
+    /* any hide/show: time while away was not observed */
+    if (tracker) tracker.interrupt(performance.now() / 1000);
+    exInterrupt();
+    if (document.visibilityState === 'visible') wlRequest();
+  });
+  detectors.still = function () {
+    var s = tracker ? tracker.tick(performance.now() / 1000, document.visibilityState === 'visible', wlIsHeld()) : { seconds: 0, pauses: 0 };
+    return { detected: s.seconds.toFixed(1) + ' s', extra: 'pauses ' + s.pauses + ', wakelock ' + stillWl + ', perm ' + $('st-perm').textContent };
+  };
+  if (typeof DeviceMotionEvent === 'undefined') setText('st-perm', 'not available', 'bad');
+  if (!wlSupported()) setText('st-wl', 'not available', 'warn');
+
+  /* ---------- Squat Duel ---------- */
+  var MP_VER = '0.10.14';
+  var MP_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VER;
+  var MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+  var landmarker = null, loadTried = false, loadMs = null, sqStream = null, sqRaf = 0, sqCounter = null, sqTapT = 0, sqReadyT = 0, sqLastVideoT = -1, sqFirstMs = null, sqFirstFromReady = null, sqRunning = false, sqGen = 0, CANCELLED = { cancelled: true };
+  var SK = [[11, 12], [11, 23], [12, 24], [23, 24], [23, 25], [24, 26], [25, 27], [26, 28]];
+  function squatStop() {
+    sqGen++; /* invalidates any pending camera / model start */
+    sqRunning = false; if (sqRaf) cancelAnimationFrame(sqRaf); sqRaf = 0;
+    if (sqStream) { sqStream.getTracks().forEach(function (t) { t.stop(); }); sqStream = null; }
+    var v = $('sq-video'); if (v) v.srcObject = null; wlRelease();
+  }
+  function loadModel() {
+    if (landmarker) return Promise.resolve(landmarker);
+    var t0 = performance.now(); loadTried = true;
+    setText('sq-load', 'loading...', 'warn');
+    return import(MP_BASE + '/vision_bundle.mjs').then(function (mod) {
+      return mod.FilesetResolver.forVisionTasks(MP_BASE + '/wasm').then(function (fs) {
+        var opts = function (delegate) { return { baseOptions: { modelAssetPath: MP_MODEL, delegate: delegate }, runningMode: 'VIDEO', numPoses: 1 }; };
+        return mod.PoseLandmarker.createFromOptions(fs, opts('GPU')).catch(function () { return mod.PoseLandmarker.createFromOptions(fs, opts('CPU')); });
+      });
+    }).then(function (lm) {
+      landmarker = lm; loadMs = performance.now() - t0; setText('sq-load', (loadMs / 1000).toFixed(2) + ' s', 'ok'); return lm;
+    });
+  }
+  $('squat-start').addEventListener('click', function () {
+    squatStop(); var my = sqGen; sqTapT = performance.now(); sqFirstMs = null; sqFirstFromReady = null;
+    sqCounter = new TP.SquatCounter(); setText('sq-count', '0'); setText('sq-first', 'waiting', 'warn');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setText('sq-msg', 'Camera: not available (no getUserMedia; needs https or localhost).', 'bad'); return; }
+    setText('sq-msg', 'Asking for the camera...');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }).then(function (stream) {
+      if (my !== sqGen) { stream.getTracks().forEach(function (t) { t.stop(); }); throw CANCELLED; } /* late stream */
+      sqStream = stream; var v = $('sq-video'); v.srcObject = stream; v.play().catch(function () {});
+      wlAcquire(function () {});
+      setText('sq-msg', 'Camera on. Loading pose model...');
+      return loadModel();
+    }).then(function () {
+      if (my !== sqGen || !sqStream) throw CANCELLED;
+      sqRunning = true; sqReadyT = performance.now(); sqLastVideoT = -1;
+      setText('sq-msg', 'Tracking. Stand back so shoulders to knees are visible, then squat.');
+      sqLoop();
+    }).catch(function (e) {
+      if (e === CANCELLED) return;
+      if (my === sqGen) squatStop(); /* model-load or camera failure: stop capture */
+      var n = e && e.name ? e.name : String(e);
+      setText('sq-msg', 'Not available: ' + n + (e && e.message ? ' - ' + e.message : ''), 'bad');
+      if (loadTried && !landmarker) setText('sq-load', 'failed (CDN unreachable?)', 'bad');
+    });
+  });
+  $('squat-stop').addEventListener('click', squatStop);
+  $('squat-reset').addEventListener('click', function () { if (sqCounter) sqCounter.reset(); setText('sq-count', '0'); sqFirstMs = null; sqFirstFromReady = null; sqTapT = performance.now(); sqReadyT = sqTapT; setText('sq-first', 'waiting', 'warn'); });
+  function sqLoop() {
+    if (!sqRunning) return;
+    var v = $('sq-video'), cv = $('sq-canvas');
+    if (v.readyState >= 2 && v.currentTime !== sqLastVideoT) {
+      sqLastVideoT = v.currentTime;
+      if (cv.width !== v.videoWidth) { cv.width = v.videoWidth; cv.height = v.videoHeight; }
+      var res = null; try { res = landmarker.detectForVideo(v, performance.now()); } catch (e) { setText('sq-msg', 'Pose error: ' + e.message, 'bad'); }
+      var lm = res && res.landmarks && res.landmarks[0] ? res.landmarks[0] : null;
+      var prev = sqCounter.count; sqCounter.update(performance.now() / 1000, lm);
+      if (sqCounter.count > prev && sqFirstMs === null) {
+        sqFirstMs = performance.now() - sqTapT; sqFirstFromReady = performance.now() - sqReadyT;
+        setText('sq-first', (sqFirstMs / 1000).toFixed(1) + ' s from tap (' + (sqFirstFromReady / 1000).toFixed(1) + ' s after model ready)', sqFirstMs <= 3000 ? 'ok' : 'warn');
+      }
+      var ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+      if (lm) {
+        ctx.lineWidth = 4; ctx.strokeStyle = sqCounter.inFrame ? '#4ade80' : '#fbbf24'; ctx.fillStyle = '#fff';
+        SK.forEach(function (p) { var a = lm[p[0]], b = lm[p[1]]; ctx.beginPath(); ctx.moveTo(a.x * cv.width, a.y * cv.height); ctx.lineTo(b.x * cv.width, b.y * cv.height); ctx.stroke(); });
+        [11, 12, 23, 24, 25, 26, 27, 28].forEach(function (i) { ctx.beginPath(); ctx.arc(lm[i].x * cv.width, lm[i].y * cv.height, 5, 0, 7); ctx.fill(); });
+      }
+      setText('sq-count', String(sqCounter.count)); setText('sq-body', sqCounter.inFrame ? 'YES' : 'no', sqCounter.inFrame ? 'ok' : 'bad');
+      setText('sq-r', sqCounter.r === null ? '-' : sqCounter.r.toFixed(2)); setText('sq-phase', sqCounter.phase);
+    }
+    sqRaf = requestAnimationFrame(sqLoop);
+  }
+  detectors.squat = function () {
+    return { detected: sqCounter ? sqCounter.count : 0, extra: 'model load ' + (loadMs === null ? 'n/a' : (loadMs / 1000).toFixed(2) + ' s') + ', first squat ' + (sqFirstMs === null ? 'n/a' : (sqFirstMs / 1000).toFixed(1) + ' s from tap') };
+  };
+
+  /* ---------- Long Exhale ---------- */
+  var ac = null, an = null, exStream = null, exTimer = null, exDet = new TP.ExhaleDetector(), tbuf, fbuf, exMode = 'idle', exCalStart = 0, exNow = 0, exT0 = 0, exGen = 0, exOpening = false, exPaused = false, exLastTickT = null, exHp = false, exLabel = '', exHpTapped = false;
+  function exNowT() { return (performance.now() - exT0) / 1000; }
+  function exInterrupt() {
+    if (!ac) return;
+    var t = exNowT(); exDet.interrupt(t); exLastTickT = t;
+    if (exMode === 'cal') { exDet.calibrateStart(); exCalStart = t; } /* a calibration with a hole in it is not valid */
+    if (exMode === 'check') { exDet.checkStart(); exCalStart = t; }
+  }
+  function exhaleStop() {
+    exGen++; exOpening = false; exPaused = false; exLastTickT = null; /* invalidates any pending mic start */
+    if (exTimer) { clearInterval(exTimer); exTimer = null; }
+    if (exStream) { exStream.getTracks().forEach(function (t) { t.stop(); }); exStream = null; }
+    if (ac) { try { ac.close(); } catch (e) {} ac = null; }
+    exMode = 'idle'; wlRelease(); if ($('ex-mic')) setText('ex-mic', 'stopped');
+  }
+  /* Best effort: resolves {found: matching label or null, label: active track label}. Never rejects; empty labels = nothing found. */
+  function exHeadphoneCheck(stream) {
+    var label = '', labels = [];
+    try { var tr = stream.getAudioTracks()[0]; if (tr && tr.label) { label = tr.label; labels.push(tr.label); } } catch (e) {}
+    var done = function () { return { found: TP.findHeadphoneLabel(labels), label: label }; };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return Promise.resolve(done());
+    return new Promise(function (res) {
+      var fin = false, to = setTimeout(function () { if (!fin) { fin = true; res(done()); } }, 1500);
+      try {
+        navigator.mediaDevices.enumerateDevices().then(function (devs) {
+          (devs || []).forEach(function (d) { if (d.kind === 'audioinput' && d.label) labels.push(d.label); });
+          if (!fin) { fin = true; clearTimeout(to); res(done()); }
+        }, function () { if (!fin) { fin = true; clearTimeout(to); res(done()); } });
+      } catch (e) { if (!fin) { fin = true; clearTimeout(to); res(done()); } }
+    });
+  }
+  function exShowHp(text, soft) { $('ex-hp').hidden = false; $('ex-hp-text').textContent = text; $('ex-hp-ok').hidden = !!soft; }
+  function exHideHp() { var e = $('ex-hp'); if (e) e.hidden = true; }
+  function exCalFail(msg) {
+    exMode = 'idle'; $('ex-start').disabled = true; $('ex-retry').hidden = false;
+    setText('ex-calst', 'failed', 'bad'); setText('ex-msg', msg, 'bad');
+  }
+  function openMic(cb) {
+    if (exStream) { cb(); return; }
+    if (exOpening) return; /* a start is already pending */
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setText('ex-mic', 'not available', 'bad'); setText('ex-msg', 'Microphone: not available (needs https or localhost).'); return; }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { setText('ex-mic', 'not available', 'bad'); setText('ex-msg', 'Web Audio: not available.'); return; }
+    var my = exGen, myAc = new AC(); ac = myAc; exOpening = true;
+    myAc.onstatechange = function () { if (ac === myAc && myAc.state !== 'running') exInterrupt(); };
+    try { if (myAc.resume) myAc.resume(); } catch (x) {}
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function (s) {
+      if (my !== exGen) { s.getTracks().forEach(function (t) { t.stop(); }); return; } /* late stream after leave / Stop */
+      exHeadphoneCheck(s).then(function (info) {
+      if (my !== exGen) { s.getTracks().forEach(function (t) { t.stop(); }); return; } /* left while enumerating */
+      exOpening = false;
+      exLabel = info.label;
+      if (info.found && !exHpTapped) { /* block: show the warning, release the mic, wait for "I've removed them" */
+        exHp = true; s.getTracks().forEach(function (t) { t.stop(); }); exhaleStop();
+        exShowHp('Headphones or a headset look connected (' + info.found + '). They erase breath sound. Take them out, then tap the button.');
+        $('ex-start').disabled = true; setText('ex-mic', 'blocked', 'bad'); return;
+      }
+      if (!info.found) exHpTapped = false;
+      exHp = !!info.found; /* tapped once already: let the user through, flag stays in the log */
+      if (exHp) exShowHp('Still seeing "' + info.found + '". Continuing anyway; if you cannot be heard, calibration will say so.', true); else exHideHp();
+      try {
+      exStream = s; var src = ac.createMediaStreamSource(s); an = ac.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+      src.connect(an); /* analyser only: not connected to speakers, nothing recorded */
+      tbuf = new Float32Array(an.fftSize); fbuf = new Float32Array(an.frequencyBinCount);
+      setText('ex-mic', 'on', 'ok'); wlAcquire(function () {}); exT0 = performance.now();
+      exLastTickT = null; exTimer = setInterval(exTick, 50); cb();
+      } catch (err) { exhaleStop(); setText('ex-mic', 'not available', 'bad'); setText('ex-msg', 'Microphone error: ' + (err && err.message)); }
+      });
+    }, function (e) {
+      if (my !== exGen) return;
+      exOpening = false;
+      setText('ex-mic', 'not available', 'bad'); setText('ex-msg', 'Microphone: ' + (e && e.name) + (e && e.message ? ' - ' + e.message : '')); if (ac) { try { ac.close(); } catch (x) {} ac = null; }
+    });
+  }
+  var HEAR_MSG = "We can't hear your breath. Remove headphones and hold the phone 20-30 cm from your mouth.";
+  function exTick() {
+    if (!an) return;
+    an.getFloatTimeDomainData(tbuf); an.getFloatFrequencyData(fbuf);
+    var s = 0, i; for (i = 0; i < tbuf.length; i++) s += tbuf[i] * tbuf[i];
+    var db = 10 * Math.log10(s / tbuf.length + 1e-12);
+    var flat = TP.spectralFlatness(fbuf, ac.sampleRate / an.fftSize, TP.CONFIG.exhale.fftLoHz, TP.CONFIG.exhale.fftHiHz);
+    var t = exNowT();
+    if (exLastTickT !== null && t - exLastTickT > TP.CONFIG.exhale.gapSec) exInterrupt(); /* analysis gap */
+    exLastTickT = t;
+    if (ac.state !== 'running') { /* iOS interruption etc.: nothing is heard, nothing counts */
+      exInterrupt(); exPaused = true;
+      setText('ex-mic', 'paused', 'warn'); if (exMode !== 'idle') setText('ex-msg', 'Mic paused, tap to resume');
+      return;
+    }
+    if (exPaused) { exPaused = false; setText('ex-mic', 'on', 'ok'); if (exMode === 'run') setText('ex-msg', 'Listening. Breathe out slowly near the mic.'); }
+    if (exMode === 'cal') {
+      exDet.calibrateFeed(db); var left = 3 - (t - exCalStart);
+      setText('ex-calst', 'quiet... ' + Math.max(0, left).toFixed(1) + ' s', 'warn');
+      if (left <= 0) {
+        exMode = 'idle';
+        if (!exDet.calibrateEnd()) setText('ex-calst', 'failed', 'bad');
+        else if (exDet.rawFloorDb < TP.CONFIG.exhale.lowFloorDb) exCalFail(HEAR_MSG);
+        else { exMode = 'check'; exCalStart = t; exDet.checkStart(); setText('ex-msg', 'Now breathe out slowly, 20-30 cm from your mouth, for 3 seconds...', 'warn'); }
+      }
+    } else if (exMode === 'check') {
+      exDet.checkFeed(db); var cl = TP.CONFIG.exhale.checkSec - (t - exCalStart);
+      setText('ex-calst', 'breathe out now... ' + Math.max(0, cl).toFixed(1) + ' s', 'warn');
+      if (cl <= 0) {
+        var v = exDet.checkEnd();
+        if (v.ok) { exMode = 'idle'; setText('ex-calst', 'floor ' + exDet.floorDb.toFixed(1) + ' dB, breath +' + v.rise.toFixed(0) + ' dB', 'ok'); $('ex-start').disabled = false; $('ex-retry').hidden = true; setText('ex-msg', 'Calibrated. Tap "Start listening".'); }
+        else exCalFail(HEAR_MSG);
+      }
+    } else if (exMode === 'run') { exDet.feed(t, db, flat); }
+    else { exDet.flatS += 0.3 * (flat - exDet.flatS); }
+    exRender(db, flat);
+  }
+  function exRender(db, flat) {
+    var lo = -90, hi = 0, pct = function (d) { return Math.max(0, Math.min(100, (d - lo) / (hi - lo) * 100)) + '%'; };
+    $('ex-bar').style.width = pct(db);
+    if (exDet.floorDb !== null) { $('ex-floor').style.left = pct(exDet.floorDb); $('ex-thr').style.left = pct(exDet.floorDb + TP.CONFIG.exhale.enterDb); }
+    setText('ex-db', db.toFixed(0) + ' dB / ' + (exDet.floorDb === null ? '?' : exDet.floorDb.toFixed(0)));
+    setText('ex-flat', exDet.flatS.toFixed(2) + (exDet.flatS >= TP.CONFIG.exhale.flatMin ? ' (noise-like)' : ' (tonal)'), exDet.flatS >= TP.CONFIG.exhale.flatMin ? 'ok' : 'warn');
+    setText('ex-n', exDet.accepted + ' / ' + TP.CONFIG.exhale.target, exDet.accepted >= TP.CONFIG.exhale.target ? 'ok' : '');
+    setText('ex-now', exMode === 'run' ? (exDet.inEv ? 'exhaling ' + exDet.curLen.toFixed(1) + ' s' : 'quiet') : exMode);
+    $('ex-list').textContent = exDet.events.length ? exDet.events.map(function (e, i) { return (i + 1) + '. ' + e.len.toFixed(1) + ' s  ' + (e.ok ? 'COUNTED' : 'rejected: ' + e.why); }).join('\n') : 'none';
+  }
+  /* resume() inside the tap; resolves true only if the context is really running (iOS may leave it suspended or never settle) */
+  function exResume(cb) {
+    var my = exGen, done = false, myAc = ac;
+    function fin() { if (done) return; done = true; if (my !== exGen) return; cb(!!myAc && myAc.state === 'running'); }
+    try { var p = myAc && myAc.resume ? myAc.resume() : null; if (p && p.then) p.then(fin, fin); else fin(); } catch (e) { fin(); }
+    setTimeout(fin, 1000);
+  }
+  function exPausedMsg() { exMode = exMode === 'cal' ? 'idle' : exMode; setText('ex-mic', 'paused', 'warn'); setText('ex-msg', 'Mic paused, tap to resume'); }
+  function exStartCal() {
+    $('ex-start').disabled = true; $('ex-retry').hidden = true;
+    openMic(function () {
+      exResume(function (running) {
+        if (!running) { exMode = 'idle'; exPausedMsg(); return; }
+        setText('ex-mic', 'on', 'ok');
+        exDet.calibrateStart(); exCalStart = exNowT(); exLastTickT = null; exMode = 'cal'; setText('ex-msg', 'Stay quiet for 3 seconds...');
+      });
+    });
+  }
+  $('ex-cal').addEventListener('click', exStartCal);
+  $('ex-retry').addEventListener('click', exStartCal);
+  $('ex-hp-ok').addEventListener('click', function () { exHpTapped = true; exhaleStop(); exHideHp(); exStartCal(); }); /* re-acquire the stream and re-check */
+  $('ex-start').addEventListener('click', function () {
+    if (!exStream) { setText('ex-msg', 'Microphone is off. Calibrate again.'); return; }
+    var wasRun = exMode === 'run';
+    exResume(function (running) {
+      if (!running) { exPausedMsg(); return; }
+      setText('ex-mic', 'on', 'ok');
+      if (!wasRun) { exDet.reset(); exLastTickT = null; }
+      exMode = 'run'; setText('ex-msg', 'Listening. Breathe out slowly near the mic.');
+    });
+  });
+  $('ex-stop').addEventListener('click', function () { if (exOpening) exhaleStop(); else exMode = 'idle'; });
+  $('ex-reset').addEventListener('click', function () { exDet.reset(); exRender(-90, 0); });
+  detectors.exhale = function () {
+    return { detected: exDet.accepted, extra: 'events ' + exDet.events.map(function (e) { return e.len.toFixed(1) + 's' + (e.ok ? '' : '(' + e.why + ')'); }).join(',') + ', floor ' + (exDet.floorDb === null ? 'n/a' : exDet.floorDb.toFixed(1)) };
+  };
+
+  renderLogs();
+  window.__proto = { show: show, TP: TP };
+})();
+</script>
+</body>
+</html>
